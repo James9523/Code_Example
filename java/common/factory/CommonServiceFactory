@@ -1,0 +1,19 @@
+package common.factory;
+
+	@Component
+	@RequiredArgsConstructor
+	public class CommonServiceFactory {
+		private final ApplicationContext applicationContext;
+
+		public CommonService getCommonService(MallEnum mallName) {
+			switch (mallName) {
+				case A -> {
+					return applicationContext.getBean(AService.class);
+				}
+				case B -> {
+					return applicationContext.getBean(BService.class);
+				}
+				default -> throw new IllegalArgumentException("알수 없는 채널 : " + mallName.name());
+			}
+		}
+	}
