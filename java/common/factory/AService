@@ -1,0 +1,71 @@
+package common.factory;
+
+@Slf4j
+@Service
+@AllArgsConstructor
+public class AService implements CommonService {
+  
+    private final OrderService orderService;
+    private final LogService logService;
+
+    private final OrderRepository orderRepository;
+    private final ProductRepository productRepository;
+    
+    @Override
+    @Transactional
+    public List<CommonOrder> syncOrder(MallEnum mall, BrandEnum brand) throws Exception {
+  		List<CommonOrder> CommonOrderList = new ArrayList<>();
+  		CommonLog commonLog = new CommonLog();
+  
+  		try {
+  			CommonLog.setMessage("주문 수집 시작");
+  			logService.sendLog(CommonLog, CommonLogEnum.LOG_TYPE.INFO);
+  
+  			/** 1. 주문 목록 조회 */
+  			List<SmartstoreOrderResponse.OrderDetail> orderDetailList = this.getSmartstoreOrderList(brand, null);
+  			CommonLog.setMessageAndTotalCount("주문 목록 조회", orderDetailList.size());
+  			logService.sendLog(CommonLog, CommonLogEnum.LOG_TYPE.INFO);
+  
+  			/** 2. 기수집 여부 확인 및 수집 대상 여부 확인 */
+  			orderDetailList = this.checkOrder(orderDetailList);
+  			CommonLog.setMessageAndSuccessCount("기수집 여부 확인 및 수집 대상 여부 확인", orderDetailList.size());
+  			logService.sendLog(CommonLog, CommonLogEnum.LOG_TYPE.INFO);
+  
+  			/** 3. 상세 주문 조회 */
+  			List<SmartstoreDetailOrderResponse.DetailOrderData> detailOrderList = this.getSmartstoreDetailOrderList(brand, CommonLog, orderDetailList);
+  			CommonLog.setMessageAndSuccessCount("상세 주문 조회", detailOrderList.size());
+  			logService.sendLog(CommonLog, CommonLogEnum.LOG_TYPE.INFO);
+  
+  			/** 4. CommonOrder 객체 매핑 */
+  			for(SmartstoreDetailOrderResponse.DetailOrderData detailOrderData : detailOrderList){
+  				CommonOrder CommonOrder = this.convertProductOrderToCommonOrder(CommonLog, detailOrderData);
+  				if(CommonOrder != null) CommonOrderList.add(CommonOrder);
+  			}
+  			CommonLog.setMessageAndSuccessFailCount("CommonOrder 객체 매핑", CommonOrderList.size(), productOrderList.size() - CommonOrderList.size());
+  			logService.sendLog(CommonLog, CommonLogEnum.LOG_TYPE.INFO);
+  
+  			/** 5. SKU 추출 및 존재 여부 확인 */
+  			List<String> skuList = CommonOrderList.stream().map(CommonOrder::getSkuNo).toList();
+  			CommonOrderList = orderService.checkExistSkuNo(skuList, CommonOrderList);
+  			CommonLog.setMessageAndSuccessCount("SKU 추출 및 존재 여부 확인", CommonOrderList.size());
+  			logService.sendLog(CommonLog, CommonLogEnum.LOG_TYPE.INFO);
+  
+  			/** 6. 발주 처리 */
+  			CommonOrderList = this.syncPlaceOrder(mall, brand, CommonOrderList);
+  			Long successedCount = CommonOrderList.stream().filter(CommonOrder -> "Y".equals(CommonOrder.getCommonOrder().getPlaceOrderYn())).count();
+  			CommonLog.setMessageAndSuccessFailCount("발주 처리", successedCount.intValue(), CommonOrderList.size() - successedCount.intValue());
+  			logService.sendLog(CommonLog, CommonLogEnum.LOG_TYPE.INFO);
+  
+  			/** 7. 발주처리 후 DB 입력 */
+  			if(!CommonOrderList.isEmpty()){
+  				Long insertRes = orderService.insertCommonOrderList(CommonOrderList);
+  				CommonLog.setMessageAndSuccessFailCount("발주처리 후 DB 입력", insertRes.intValue(), CommonOrderList.size() - insertRes.intValue());
+  				logService.sendLog(CommonLog, CommonLogEnum.LOG_TYPE.INFO);
+  			}
+  		} catch (Exception e) {
+  			CommonLog.setMessageAndLogType(e.getMessage().concat("\n").concat(Arrays.toString(e.getStackTrace())), CommonLogEnum.LOG_TYPE.ERROR);
+  			logService.sendLog(CommonLog, CommonLogEnum.LOG_TYPE.ERROR);
+  		}
+  		return CommonOrderList;
+  	}
+  }
