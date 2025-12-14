@@ -1,0 +1,5 @@
+package common.factory;
+
+	public interface CommonService {
+		List<CommonOrder> syncOrder(MallEnum mall, BrandEnum brand) throws Exception ;
+	}
